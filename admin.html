@@ -1,0 +1,199 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Custom International | Admin Portal</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f2f4f8;color:#17243a;font-family:Arial,sans-serif}
+header{background:#10213b;color:white;padding:22px}
+header h2{margin:0}
+main{max-width:950px;margin:30px auto;padding:16px}
+.card{background:white;padding:24px;margin-bottom:20px;border-radius:14px;box-shadow:0 3px 15px #0000000d}
+h2,h3{margin-top:0}
+input,select,textarea{width:100%;padding:13px;margin:8px 0 16px;border:1px solid #ccd2dc;border-radius:7px;font-size:15px}
+button{background:#173b60;color:white;border:0;padding:13px 20px;border-radius:7px;font-size:15px;cursor:pointer}
+.secondary{background:#68788c}
+.hidden{display:none}
+.message{margin-top:12px;white-space:pre-wrap}
+label{font-weight:bold}
+</style>
+</head>
+<body>
+<header><h2>CUSTOM INTERNATIONAL — ADMIN</h2></header>
+<main>
+<section class="card" id="login">
+<h2>Administrator Sign In</h2>
+<label>Email address</label>
+<input id="email" type="email" placeholder="Administrator email">
+<label>Password</label>
+<input id="password" type="password" placeholder="Password">
+<button onclick="signIn()">Sign In</button>
+<div class="message" id="loginMessage"></div>
+</section>
+
+<section class="hidden" id="dashboard">
+<div class="card">
+<h2>Shipment Administration</h2>
+<p>Create a shipment and generate its tracking code automatically.</p>
+<button class="secondary" onclick="signOut()">Sign Out</button>
+</div>
+
+<div class="card">
+<h3>Create New Shipment</h3>
+
+<label>Sender name</label>
+<input id="sender" placeholder="Sender name">
+
+<label>Receiver name</label>
+<input id="receiver" placeholder="Receiver name">
+
+<label>Origin country</label>
+<select id="origin">
+<option value="">Select origin country</option>
+</select>
+
+<label>Destination country</label>
+<select id="destination">
+<option value="">Select destination country</option>
+</select>
+
+<label>Shipment description</label>
+<textarea id="description" placeholder="Describe the shipment"></textarea>
+
+<label>Carrier</label>
+<input id="carrier" placeholder="Carrier or shipping company">
+
+<label>Shipment status</label>
+<select id="status">
+<option>Shipment Registered</option>
+<option>Processing</option>
+<option>In Transit</option>
+<option>Arrived at Facility</option>
+<option>Customs Clearance</option>
+<option>Out for Delivery</option>
+<option>Delivered</option>
+<option>On Hold</option>
+</select>
+
+<label>Estimated delivery</label>
+<input id="delivery" type="date">
+
+<button onclick="createShipment()">Create Shipment</button>
+<div class="message" id="createMessage"></div>
+</div>
+</section>
+</main>
+
+<script>
+const SUPABASE_URL = "https://ngtdxfddfdfohbelwoh nv.supabase.co";
+const SUPABASE_KEY = "sb_publishable_hzosLf8ek59Xxs7Mos5qIQ_EEvPJ-78";
+const db = window.supabase.createClient(
+  SUPABASE_URL.replace(/\s/g,""),
+  SUPABASE_KEY
+);
+
+const countries = [
+"Australia","Belgium","Brazil","Canada","China","France",
+"Germany","Ghana","India","Ireland","Italy","Japan",
+"Netherlands","Nigeria","Poland","Saudi Arabia","Singapore",
+"South Africa","Spain","Turkey","United Arab Emirates",
+"United Kingdom","United States"
+];
+
+["origin","destination"].forEach(id=>{
+  const select=document.getElementById(id);
+  countries.forEach(country=>{
+    const option=document.createElement("option");
+    option.value=country;
+    option.textContent=country;
+    select.appendChild(option);
+  });
+});
+
+async function signIn(){
+  const message=document.getElementById("loginMessage");
+  message.textContent="Signing in...";
+  const {data,error}=await db.auth.signInWithPassword({
+    email:document.getElementById("email").value.trim(),
+    password:document.getElementById("password").value
+  });
+  if(error){message.textContent=error.message;return;}
+
+  const {data:admin,error:adminError}=await db
+    .from("admin_users")
+    .select("user_id")
+    .eq("user_id",data.user.id)
+    .maybeSingle();
+
+  if(adminError || !admin){
+    await db.auth.signOut();
+    message.textContent="This account is not registered as an administrator.";
+    return;
+  }
+
+  document.getElementById("login").classList.add("hidden");
+  document.getElementById("dashboard").classList.remove("hidden");
+}
+
+function generateTrackingCode(){
+  const chars="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes=new Uint8Array(20);
+  crypto.getRandomValues(bytes);
+  return "SHIP-"+Array.from(bytes,b=>chars[b%chars.length]).join("");
+}
+
+async function createShipment(){
+  const message=document.getElementById("createMessage");
+  const {data:{user}}=await db.auth.getUser();
+  if(!user){message.textContent="Please sign in again.";return;}
+
+  const origin=document.getElementById("origin").value;
+  const destination=document.getElementById("destination").value;
+
+  if(!origin || !destination){
+    message.textContent="Please select both countries.";
+    return;
+  }
+
+  const shipment={
+    tracking_code:generateTrackingCode(),
+    sender_name:document.getElementById("sender").value.trim(),
+    receiver_name:document.getElementById("receiver").value.trim(),
+    origin_country:origin,
+    destination_country:destination,
+    description:document.getElementById("description").value.trim(),
+    carrier:document.getElementById("carrier").value.trim(),
+    status:document.getElementById("status").value,
+    estimated_delivery:document.getElementById("delivery").value || null
+  };
+
+  if(!shipment.sender_name || !shipment.receiver_name){
+    message.textContent="Please enter the sender and receiver names.";
+    return;
+  }
+
+  message.textContent="Saving shipment...";
+  const {data,error}=await db.from("shipments")
+    .insert(shipment)
+    .select("tracking_code")
+    .single();
+
+  if(error){
+    message.textContent="Could not save shipment: "+error.message;
+    return;
+  }
+
+  message.textContent="Shipment created successfully.\nTracking code: "+data.tracking_code;
+}
+
+async function signOut(){
+  await db.auth.signOut();
+  location.reload();
+}
+</script>
+</body>
+</html>
